@@ -1,0 +1,317 @@
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+import matplotlib.pyplot as plt
+import seaborn as sns
+pd.set_option('display.max_columns',None)
+
+import os
+for dirname, _, filenames in os.walk('mlhr'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+        
+employee_df = pd.read_csv('employee_survey_data.csv')
+manager_df = pd.read_csv('manager_survey_data.csv')
+general_df = pd.read_csv('general_data.csv')
+In_df = pd.read_csv('in_time.csv')
+Out_df = pd.read_csv('out_time.csv')
+#Checking general_df
+general_df.info()
+general_df.describe()
+general_df.isnull().sum()
+
+#Checking employee_df
+employee_df.info() 
+employee_df.describe()
+employee_df.isnull().sum()
+#Checking manager_df
+manager_df.info()
+manager_df.describe()
+manager_df.isnull().sum()
+
+#Data Cleaning
+#cleaning employee_df
+print(employee_df['EnvironmentSatisfaction'].median())
+print(employee_df['JobSatisfaction'].median())
+print(employee_df['WorkLifeBalance'].median())
+#since all the 3 columns haas 3 as median value so we fill null value with 3 rating
+employee_df.fillna(3.0, inplace=True)
+employee_df.isnull().sum()
+#cleaning general_df
+general_df[general_df['NumCompaniesWorked'].isnull()]
+general_df[general_df['TotalWorkingYears'].isnull()]
+
+In_df.rename(columns={'Unnamed: 0' : 'EmployeeID'}, inplace=True)
+Out_df.rename(columns={'Unnamed: 0' : 'EmployeeID'}, inplace=True)
+
+#Code for generating average in out time diff
+time_diff = []
+for i in range(4410):
+    time_diff.append([])
+    for j in range(262):
+        time_diff[i].append(j)
+time_diff_sec = []
+for i in range(4410):
+    time_diff_sec.append([])
+    for j in range(262):
+        time_diff_sec[i].append(j)
+
+from datetime import datetime
+In_df.fillna(In_df.iloc[2,2], inplace=True)
+Out_df.fillna(In_df.iloc[2,2], inplace=True)
+for i in range(0,4410):
+    for j in range(1, 262):
+        In_Time = In_df.iloc[i,j]
+        out_Time = Out_df.iloc[i,j]
+        d1 = datetime.strptime(In_Time, "%Y-%m-%d %H:%M:%S")
+        d2 = datetime.strptime(out_Time, "%Y-%m-%d %H:%M:%S")
+        time_diff[i][j] = d2 - d1
+        a = d2.hour*3600 + d2.minute*60 + d2.second
+        b = d1.hour*3600 + d1.minute*60 + d1.second
+        time_diff_sec[i][j] = a - b
+        
+In_Out_Diff = pd.DataFrame(time_diff, columns=In_df.columns)
+In_Out_Diff_sec = pd.DataFrame(time_diff_sec, columns=In_df.columns)
+In_Out_Diff['EmployeeID'] = In_df['EmployeeID']
+In_Out_Diff_sec['EmployeeID'] = In_df['EmployeeID']
+
+#Time format in seconds
+In_Out_Diff_sec.head(5)
+#Time format in HH:MM:SS
+In_Out_Diff.head(5)
+
+
+#Code for generating mean time for each employee
+import datetime
+mean_time = []
+mean_sec = []
+for i in range(4410):
+    mean = In_Out_Diff_sec.iloc[i : i+1, 1: ].values.mean()
+    mean_format = str(datetime.timedelta(seconds = mean))
+    mean_sec.append(mean)
+    mean_time.append(mean_format)
+
+In_Out_Diff['Mean_Sec'] = mean_sec
+In_Out_Diff['Mean'] = mean_time
+In_Out_Diff.head()
+
+Emp_in_out = In_Out_Diff[['EmployeeID', 'Mean', 'Mean_Sec']]
+#Code for giving rating basis on meant time
+#25200 - less than this - 1
+#between two - 2
+#30600 - moe than - 3
+rating = []
+for i in range(Emp_in_out.shape[0]):
+    mean_time = Emp_in_out['Mean_Sec'].iloc[i]
+    if mean_time < 25200:
+        rating.append(1) 
+    elif (mean_time > 25200) & (mean_time < 30600):
+        rating.append(2) 
+    else:
+        rating.append(3)
+rating
+Emp_in_out['Work_Time_Rating'] = rating
+print("Emp_in_out.head()")
+print(Emp_in_out.head())
+
+Employee = general_df.merge(Emp_in_out[['EmployeeID','Work_Time_Rating']], how='outer', on='EmployeeID')
+Employee = Employee.merge(employee_df, how='outer', on='EmployeeID')
+Employee = Employee.merge(manager_df, how='outer', on='EmployeeID')
+
+
+
+
+df = Employee[['EmployeeID']]############
+Employee = Employee.drop('EmployeeID', axis=1)
+Employee = pd.concat([df, Employee], axis=1)
+df = Employee[['Attrition']]
+Employee = Employee.drop('Attrition', axis=1)
+Employee = pd.concat([Employee, df], axis=1)
+
+Employee.isnull().sum()
+#Droping Null values
+Employee.dropna(inplace=True)
+Employee.isnull().sum()
+
+
+
+Employee.drop(['EmployeeCount', 'Over18', 'StandardHours','EmployeeID','YearsWithCurrManager','PercentSalaryHike','TotalWorkingYears','YearsSinceLastPromotion'], axis=1, inplace=True)    ###################
+#Machine Learning Model
+
+from sklearn.preprocessing import LabelEncoder
+def encoder(X_i):
+    label_encoder = LabelEncoder()
+    X_i =  label_encoder.fit_transform(X_i)
+    return X_i
+temp = Employee.drop('Attrition', axis=1)
+#Transforming BussineesTravel
+temp['BusinessTravel'] = encoder(temp['BusinessTravel'])
+
+#Transforming Department
+temp['Department'] = encoder(temp['Department'])
+
+#Transforming EducationField
+temp['EducationField'] = encoder(temp['EducationField'])
+
+#Transforming Gender
+temp['Gender'] = encoder(temp['Gender'])
+
+#Transforming JobRole
+temp['JobRole'] = encoder(temp['JobRole'])
+
+#Transforming MaritialStatus
+temp['MaritalStatus'] = encoder(temp['MaritalStatus'])
+
+#Transforming StockOptionLevel
+temp['StockOptionLevel'] = encoder(temp['StockOptionLevel'])
+
+
+#刪除後
+col=temp.iloc[0:1,0:25]
+print(col)
+X=temp
+
+
+
+
+"""
+####
+#High Correlation
+import pandas as pd
+df = pd.DataFrame(X)
+print(df.corr())
+
+
+"""
+
+Y = Employee.iloc[:, 21].values
+print(Y)
+label_encoder1 = LabelEncoder()
+Y =  label_encoder1.fit_transform(Y)
+
+
+
+#Feature Importance:SelectKBest 
+from sklearn.feature_selection import SelectKBest, f_regression
+kb_regr = SelectKBest(f_regression,k=17) 
+X = kb_regr.fit_transform(X,Y)
+print(X.shape)
+print(kb_regr.scores_)
+print(kb_regr.get_support())
+
+
+
+
+#Feature Scaling
+from sklearn.preprocessing import StandardScaler
+sc_x = StandardScaler()
+X  = sc_x.fit_transform(X)
+pd.DataFrame(X)
+
+
+
+#pd.set_option('display.max_columns',None)
+#print(X)
+
+#Train Test split
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.3, random_state =0 )
+
+#Logistic Regression
+
+from sklearn.linear_model import LogisticRegression
+classifier = LogisticRegression(random_state = 0)
+classifier.fit(X_train, y_train)
+y_pred = classifier.predict(X_test)
+from sklearn.metrics import confusion_matrix
+cm = confusion_matrix(y_test, y_pred)
+print("Logistic Regression")
+print(cm)
+from sklearn.metrics import classification_report
+print(classification_report(y_test,y_pred))
+#SVC
+from sklearn.svm import SVC
+classifier_svc = SVC(kernel='rbf', random_state = 0)
+classifier_svc.fit(X_train, y_train)
+y_pred = classifier_svc.predict(X_test)
+cm = confusion_matrix(y_test, y_pred)
+print("svm")
+print(cm)
+from sklearn.metrics import classification_report
+print(classification_report(y_test,y_pred))
+#Decision tree
+from sklearn.tree import DecisionTreeClassifier
+classifier_dt = DecisionTreeClassifier()
+classifier_dt.fit(X_train, y_train)
+y_pred = classifier_dt.predict(X_test)
+cm_dt = confusion_matrix(y_test, y_pred)
+print("dt")
+print(cm_dt)
+from sklearn.metrics import classification_report
+print(classification_report(y_test,y_pred))
+
+###############################
+from sklearn.naive_bayes import BernoulliNB
+bnb = BernoulliNB()
+bnb.fit(X_train, y_train)
+print("bnb",bnb.score(X_test, y_test))
+
+#SGDClassifier
+from sklearn.linear_model import SGDClassifier
+sgd = SGDClassifier(loss='log', max_iter=1000)
+sgd.fit(X_train, y_train)
+print("SGDClassifier",sgd.score(X_test, y_test))
+ 
+###############################                                 
+#Evaluating the Model Performance
+#K Fold Cross Validation for logistic Regression
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator=classifier, X=X_train, y = y_train, cv = 10)
+print("lr:",accuracies.mean())
+#K Fold Cross Validation for svc
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator=classifier_svc, X=X_train, y = y_train, cv = 10)
+print("svm:",accuracies.mean())
+#K Fold Cross Validation for descision tree
+from sklearn.model_selection import cross_val_score
+accuracies = cross_val_score(estimator=classifier_dt, X=X_train, y = y_train, cv = 10)
+print("dt:",accuracies.mean())
+
+#Model tuning for Logistic Regression
+from sklearn.model_selection import GridSearchCV
+
+
+parameters = [{ 'C' : [ 0.5, 1, 5 , 10], 'solver' : ['newton-cg', 'lbfgs', 'liblinear', 'sag' ],'penalty' : ['l2']},
+               {'C' : [ 0.5, 1, 5 , 10], 'solver' : [ 'saga'],'penalty' : ['elasticnet']}
+              ]
+grid_search = GridSearchCV(estimator=classifier, param_grid = parameters, scoring = 'accuracy', cv=10)
+grid_search = grid_search.fit(X_train, y_train)
+best_accuracy = grid_search.best_score_
+best_parameter = grid_search.best_params_
+print("lr",best_accuracy)
+print(best_parameter)
+#Model Tuning for SVC
+from sklearn.model_selection import GridSearchCV
+parameters = [
+               {'C' : [ 0.5, 1, 5 ], 'gamma' : [0.1, 0.2],'kernel' : ['poly',  'sigmoid'], 'coef0' : [0.05, 0.1]},
+                 {'C' : [ 0.5, 1, 5 ], 'gamma' : [0.1, 0.2],'kernel' : [ 'rbf']}
+              ]
+grid_search = GridSearchCV(estimator=classifier_svc, param_grid = parameters, scoring = 'accuracy', cv=10)
+grid_search = grid_search.fit(X_train, y_train)
+best_accuracy = grid_search.best_score_
+best_parameter = grid_search.best_params_
+print("svm",best_accuracy)
+print(best_parameter)
+
+#Model Tuning for Decision Tree
+from sklearn.model_selection import GridSearchCV
+parameters = [
+               { 'criterion' : ['gini', 'entropy'], 'max_depth' : [15,20,23,25]}
+              ]
+grid_search = GridSearchCV(estimator=classifier_dt, param_grid = parameters, scoring = 'accuracy', cv=10)
+grid_search = grid_search.fit(X_train, y_train)
+best_accuracy = grid_search.best_score_
+best_parameter = grid_search.best_params_
+print("dt",best_accuracy)
+print(best_parameter)
+
+
